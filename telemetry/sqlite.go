@@ -152,8 +152,14 @@ func (s *sqliteExporter) pruneRows(ctx context.Context) error {
 			break
 		}
 	}
-	_, err := s.db.ExecContext(ctx, "PRAGMA incremental_vacuum(256)")
-	return err
+	rows, err := s.db.QueryContext(ctx, "PRAGMA incremental_vacuum(256)")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		// SQLite reclaims one page per step.
+	}
+	return errors.Join(rows.Err(), rows.Close())
 }
 
 func (s *sqliteExporter) close(context.Context) error {

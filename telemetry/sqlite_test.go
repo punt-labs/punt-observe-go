@@ -40,6 +40,19 @@ func TestStartupAndIdlePruningReclaimsSpace(t *testing.T) {
 	}, 2*time.Second, 25*time.Millisecond)
 }
 
+func TestPruneReclaimsMultiplePages(t *testing.T) {
+	freshHome(t)
+	s, err := openSQLite(t.Context(), "sample", 1)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, s.close(t.Context())) }()
+	addExpired(t, s)
+	var before, after int
+	require.NoError(t, s.db.QueryRowContext(t.Context(), "PRAGMA page_count").Scan(&before))
+	require.NoError(t, s.prune(t.Context()))
+	require.NoError(t, s.db.QueryRowContext(t.Context(), "PRAGMA page_count").Scan(&after))
+	assert.Greater(t, before-after, 1, "one vacuum pass should reclaim multiple free pages")
+}
+
 func addExpired(t *testing.T, s *sqliteExporter) {
 	t.Helper()
 	_, err := s.db.ExecContext(t.Context(), `
