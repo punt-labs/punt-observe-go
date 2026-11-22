@@ -76,7 +76,13 @@ func (d *Dir) FileWith(name string, flags int) (*os.File, error) {
 	if !validLeaf(name) {
 		return nil, unix.EINVAL
 	}
-	fd, err := unix.Openat(int(d.Fd()), name, flags|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
+	parent := int(d.Fd())
+	flags |= unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC
+	fd, err := unix.Openat(parent, name, flags, 0o600)
+	if errors.Is(err, unix.ENOENT) && flags&(unix.O_CREAT|unix.O_EXCL) == unix.O_CREAT {
+		// Darwin openat can report ENOENT to the loser of a concurrent create (golang/go#81246).
+		fd, err = unix.Openat(parent, name, flags&^unix.O_CREAT, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
