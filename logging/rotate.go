@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	maxFileBytes = 5_242_880
-	backupCount  = 5
+	maxFileBytes        = 5_242_880
+	backupCount         = 5
+	rotationLockTimeout = 2 * time.Second
 )
 
 type sink struct {
@@ -24,8 +25,10 @@ type sink struct {
 }
 
 func (s *sink) locked(ctx context.Context, action func() error) (err error) {
+	ctx, cancel := context.WithTimeout(ctx, rotationLockTimeout)
+	defer cancel()
 	if err := s.lockLocal(ctx); err != nil {
-		return err
+		return fmt.Errorf("acquire rotation lock: %w", err)
 	}
 	defer s.mu.Unlock()
 	if s.dir == nil {
@@ -36,22 +39,13 @@ func (s *sink) locked(ctx context.Context, action func() error) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, lock.Close()) }()
-	if ctx.Done() == nil {
-		err = privatefs.Lock(lock)
-	} else {
-		err = privatefs.LockContext(ctx, lock)
-	}
-	if err != nil {
-		return err
+	if err := privatefs.LockContext(ctx, lock); err != nil {
+		return fmt.Errorf("acquire rotation lock: %w", err)
 	}
 	return action()
 }
 
 func (s *sink) lockLocal(ctx context.Context) error {
-	if ctx.Done() == nil {
-		s.mu.Lock()
-		return nil
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

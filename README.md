@@ -46,6 +46,12 @@ Close the handler after those loggers are done. Configure detached workers at
 their own entry points; do not use stderr as a durable sink or write logs to
 MCP stdout.
 
+Lock acquisition during startup and writes is limited to two seconds. If
+`logging.New` returns an error wrapping `context.DeadlineExceeded`, warn once
+on stderr and continue with `slog.DiscardHandler` rather than aborting the tool.
+A running handler skips the contended record and can write again after the
+lock is released. File logging contention does not disable telemetry.
+
 Declare versioned `telemetry.Schema` values at build time. Use
 `telemetry.New` with the tool name, configuration, and schema declarations.
 Use `Client.Record` with the declared name and version and the typed field

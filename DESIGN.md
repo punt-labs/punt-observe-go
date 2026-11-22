@@ -17,6 +17,12 @@ are renamed under the same lock. This requires a filesystem that honors
 local Unix file locking; replace the sink with a single owner for other
 topologies.
 
+Setup and writes (including rollover) share a two-second acquisition budget
+for the mutex and non-blocking `flock` retries. On startup timeout the entry
+point gets an error and can continue without a file sink; on write timeout
+the handler skips the record and emits a rate-limited stderr notice. The
+handler does not bypass the lock, and later records can retry.
+
 The handler formats attributes, groups and error values before running
 bounded redaction passes. Arbitrary composite values are not traversed;
 use typed attributes, groups or a `slog.LogValuer` for structured metadata.

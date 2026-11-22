@@ -4,6 +4,7 @@ package smoke
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -47,11 +48,18 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		opts = append(opts, logging.WithLevel(slog.LevelDebug))
 	}
 	h, err := logging.New(tool, cfg.Role, opts...)
-	if err != nil {
+	var handler slog.Handler
+	switch {
+	case err == nil:
+		handler = h
+		defer func() { err = errors.Join(err, h.Close()) }()
+	case errors.Is(err, context.DeadlineExceeded):
+		_, _ = fmt.Fprintln(os.Stderr, "Private diagnostics unavailable: rotation lock timed out; continuing without file logging")
+		handler = slog.DiscardHandler
+	default:
 		return errors.New("cannot initialize private diagnostics")
 	}
-	defer func() { err = errors.Join(err, h.Close()) }()
-	log := slog.New(h).With("component", tool+"."+cfg.Role, "request_id", requestID(cfg.Role))
+	log := slog.New(handler).With("component", tool+"."+cfg.Role, "request_id", requestID(cfg.Role))
 	if cfg.Spawn {
 		return runDetached(ctx, log, cfg)
 	}
