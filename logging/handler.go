@@ -80,7 +80,9 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	if !ok {
 		return nil
 	}
-	if err := h.sink.write(ctx, line); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	if err := h.sink.write(writeCtx, line); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}

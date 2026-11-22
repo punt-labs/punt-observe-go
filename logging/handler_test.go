@@ -92,6 +92,20 @@ func TestUnsafeLogPathAndClosedSink(t *testing.T) {
 	assert.ErrorIs(t, h.Handle(context.Background(), slog.Record{Message: "closed", Level: slog.LevelDebug}), os.ErrClosed)
 }
 
+func TestDiagnosticSurvivesCanceledContext(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	h, err := New("sample", "cli")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, h.Close()) }()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	slog.New(h).InfoContext(ctx, "Request canceled")
+	b, err := os.ReadFile(filepath.Join(home, ".punt-labs", "sample", "logs", "sample.log"))
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "Request canceled")
+}
+
 func checkMode(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
 	info, err := os.Stat(path)
