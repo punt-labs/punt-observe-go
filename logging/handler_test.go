@@ -55,6 +55,24 @@ func TestPrivateDiagnosticHandler(t *testing.T) {
 	}
 }
 
+func TestBareTokenRedaction(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	h, err := New("sample", "cli")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, h.Close()) }()
+	log := slog.New(h)
+	log.Info("Standalone token attribute", "token", "opaque-attribute-123")
+	log.Info("Rejected token=opaque-message-456")
+	log.Warn("Rejected request", "error", errors.New("token=opaque-error-789"))
+	b, err := os.ReadFile(filepath.Join(home, ".punt-labs", "sample", "logs", "sample.log"))
+	require.NoError(t, err)
+	for _, value := range []string{"opaque-attribute-123", "opaque-message-456", "opaque-error-789"} {
+		assert.NotContains(t, string(b), value)
+	}
+	assert.Equal(t, 3, strings.Count(string(b), "token=[redacted]"))
+}
+
 func TestUnsafeLogPathAndClosedSink(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

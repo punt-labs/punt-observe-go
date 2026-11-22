@@ -11,8 +11,8 @@ import (
 const maxRecordBytes = 64 * 1024
 
 var (
-	credentialKey = regexp.MustCompile(`(?i)(?:^|[-_.])(?:authorization|proxy[-_]?authorization|(?:api[-_]?|access[-_]?|refresh[-_]?|session[-_]?)token|api[-_]?key|password|passwd|secret|credentials?|cookie|set-cookie)(?:$|[-_.])`)
-	keyValue      = regexp.MustCompile(`(?i)(\b(?:[a-z0-9]+[-_]){0,5}(?:authorization|(?:api[-_]?|access[-_]?|refresh[-_]?|session[-_]?)token|api[-_]?key|password|passwd|secret|credentials?|cookie)\b["']?\s*[:=]\s*)(?:\[redacted\]|"[^"\r\n]*"|'[^'\r\n]*'|(?:basic|bearer)\s+[^\s,;]+|[^\s,;]+)`)
+	credentialKey = regexp.MustCompile(`(?i)(?:^|[-_.])(?:authorization|proxy[-_]?authorization|(?:(?:api|access|refresh|session)[-_]?)?token|api[-_]?key|password|passwd|secret|credentials?|cookie|set-cookie)(?:$|[-_.])`)
+	keyValue      = regexp.MustCompile(`(?i)(\b(?:[a-z0-9]+[-_]){0,5}(?:authorization|(?:(?:api|access|refresh|session)[-_]?)?token|api[-_]?key|password|passwd|secret|credentials?|cookie)\b["']?\s*[:=]\s*)(?:\[redacted\]|"[^"\r\n]*"|'[^'\r\n]*'|(?:basic|bearer)\s+[^\s,;]+|[^\s,;]+)`)
 	cookieHeader  = regexp.MustCompile(`(?i)(\b(?:set-cookie|cookie):[ \t]*)[^\r\n]*`)
 	keyShape      = regexp.MustCompile(`(?i)\b(?:gh[pousr]_[a-z0-9]{16,}|github_pat_[a-z0-9_]{16,}|sk-[a-z0-9_-]{16,})\b`)
 	authScheme    = regexp.MustCompile(`(?i)(\b(?:bearer|basic)(?:[\s\x0b\x{85}]+|\\(?:t|x09|x20))+)(?:\[redacted\]|["']?[a-z0-9._~+/%=-]+["']?)`)
