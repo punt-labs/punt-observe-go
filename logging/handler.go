@@ -42,7 +42,9 @@ func WithLevel(level slog.Leveler) Option {
 	}
 }
 
-// New opens a private durable sink for an entry point. The caller owns Close.
+// New opens a private durable sink for an entry point. If the rotation lock
+// cannot be acquired within two seconds, it returns an error wrapping
+// context.DeadlineExceeded. The caller owns Close on success.
 func New(tool, role string, opts ...Option) (*Handler, error) {
 	if !privatefs.ValidTool(tool) || !privatefs.ValidTool(role) {
 		return nil, errors.New("invalid diagnostic tool or role")
@@ -80,16 +82,15 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	if !ok {
 		return nil
 	}
-	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	defer cancel()
-	if err := h.sink.write(writeCtx, line); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
+	if err := h.sink.write(context.WithoutCancel(ctx), line); err != nil {
 		now := time.Now().Unix()
 		last := h.lastReport.Load()
 		if now-last >= 60 && h.lastReport.CompareAndSwap(last, now) {
-			_, _ = fmt.Fprintln(os.Stderr, "Private diagnostic write failed")
+			message := "Private diagnostic write failed"
+			if errors.Is(err, context.DeadlineExceeded) {
+				message = "Private diagnostic record skipped: rotation lock timed out"
+			}
+			_, _ = fmt.Fprintln(os.Stderr, message)
 		}
 		return err
 	}

@@ -137,16 +137,6 @@ func (d *Dir) Remove(name string) error {
 	return unix.Unlinkat(int(d.Fd()), name, 0)
 }
 
-// Lock obtains an exclusive lock, retrying signal interruptions.
-func Lock(file *os.File) error {
-	for {
-		err := unix.Flock(int(file.Fd()), unix.LOCK_EX)
-		if !errors.Is(err, unix.EINTR) {
-			return err
-		}
-	}
-}
-
 // LockContext waits for a lock only while ctx permits.
 func LockContext(ctx context.Context, file *os.File) error {
 	timer := time.NewTicker(10 * time.Millisecond)

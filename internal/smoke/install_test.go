@@ -1,17 +1,23 @@
 package smoke
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 	_ "modernc.org/sqlite"
 )
 
@@ -61,8 +67,67 @@ func TestInstalledSmoke(t *testing.T) {
 	require.LessOrEqual(t, len(files), 7)
 	forbidden := []string{"fixture-user", "fixture-pass", "example.invalid", "path-secret", "query-secret", "fragment-secret", "fixture-auth", "fixture-person"}
 	verifyLogs(t, files, forbidden)
-	verifyStore(t, filepath.Join(root, "telemetry.db"), forbidden)
+	store := filepath.Join(root, "telemetry.db")
+	verifyStore(t, store, forbidden, 5)
 	t.Logf("installed example: %d log files (including lock), rotated; 144 load records, two detached outcomes, five telemetry spans", len(files))
+
+	before, err := os.Stat(base)
+	require.NoError(t, err)
+	holdRotationLock(t, base+".rotate.lock")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "-role", "cli")
+	cmd.Dir = bin
+	cmd.Env = command().Env
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	start := time.Now()
+	out, err = cmd.Output()
+	elapsed := time.Since(start)
+	require.NoError(t, err, "startup during lock contention: %s", &stderr)
+	assert.Empty(t, out)
+	assert.Equal(t, "Private diagnostics unavailable: rotation lock timed out; continuing without file logging\n", stderr.String())
+	after, err := os.Stat(base)
+	require.NoError(t, err)
+	assert.Equal(t, before.Size(), after.Size(), "contended startup must not write to the log")
+	verifyStore(t, store, forbidden, 6)
+	t.Logf("separate process held rotation lock: example completed in %s, no file logging, one additional span, event and counter", elapsed.Round(time.Millisecond))
+}
+
+func holdRotationLock(t *testing.T, path string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)
+	t.Cleanup(cancel)
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHoldRotationLockProcess$")
+	cmd.Env = append(os.Environ(), "PUNT_SMOKE_ROTATION_LOCK="+path)
+	cmd.Stderr = os.Stderr
+	in, err := cmd.StdinPipe()
+	require.NoError(t, err)
+	out, err := cmd.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() {
+		assert.NoError(t, in.Close())
+		assert.NoError(t, cmd.Wait())
+	})
+	ready, err := bufio.NewReader(out).ReadString('\n')
+	require.NoError(t, err)
+	require.Equal(t, "locked\n", ready)
+}
+
+func TestHoldRotationLockProcess(t *testing.T) {
+	path := os.Getenv("PUNT_SMOKE_ROTATION_LOCK")
+	if path == "" {
+		t.Skip("subprocess only")
+	}
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, file.Close()) }()
+	require.NoError(t, unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+	_, err = fmt.Fprintln(os.Stdout, "locked")
+	require.NoError(t, err)
+	_, err = io.Copy(io.Discard, os.Stdin)
+	require.NoError(t, err)
 }
 
 func verifyLogs(t *testing.T, files, forbidden []string) {
@@ -100,7 +165,7 @@ func verifyLogs(t *testing.T, files, forbidden []string) {
 	}
 }
 
-func verifyStore(t *testing.T, path string, forbidden []string) {
+func verifyStore(t *testing.T, path string, forbidden []string, expected int) {
 	t.Helper()
 	privateMode(t, path, 0o600)
 	db, err := sql.Open("sqlite", path+"?mode=ro")
@@ -112,7 +177,7 @@ func verifyStore(t *testing.T, path string, forbidden []string) {
 	for _, signal := range []string{"span", "event", "counter"} {
 		var count int
 		require.NoError(t, db.QueryRowContext(t.Context(), "SELECT count(*) FROM signals WHERE signal=?", signal).Scan(&count))
-		assert.Equal(t, 5, count, signal)
+		assert.Equal(t, expected, count, signal)
 	}
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)

@@ -123,7 +123,9 @@ func TestSQLiteWritesRespectProcessLockAndDeadline(t *testing.T) {
 	lock, err := dir.FileWith(".telemetry.lock", os.O_RDWR)
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, lock.Close()) }()
-	require.NoError(t, privatefs.Lock(lock))
+	setup, closeSetup := context.WithTimeout(t.Context(), time.Second)
+	defer closeSetup()
+	require.NoError(t, privatefs.LockContext(setup, lock))
 	action := func(*sql.Tx) error { return nil }
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()

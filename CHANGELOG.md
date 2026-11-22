@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Bound waiting for the diagnostic rotation lock at startup and during writes.
+
 ### Added
 
 - Shared Unix diagnostics with a private, redacting `slog.Handler` and
